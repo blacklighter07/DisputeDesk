@@ -1,0 +1,180 @@
+# DisputeDesk
+
+`DisputeDesk` is a real-world environment for marketplace dispute resolution. The agent acts as an operations specialist who must inspect case evidence, classify disputes, and issue policy-compliant outcomes.
+
+The package follows the OpenEnv 3-component pattern:
+
+- `dispute_desk/models.py` for typed actions, observations, and state
+- `dispute_desk/client.py` for the typed Python client
+- `dispute_desk/server/` for environment logic and FastAPI serving
+
+## Why this environment
+
+- Real task: support and trust teams resolve these disputes every day.
+- Deterministic grading: success can be measured against policy, evidence review, refund math, and escalation correctness.
+- Reward shaping: the agent receives credit for useful intermediate work, not only the final answer.
+
+## Environment shape
+
+### Observation space
+
+Each observation includes:
+
+- case summary and task objective
+- available evidence artifacts
+- revealed evidence content
+- revealed policy and operations context
+- current classification state
+- steps remaining
+- provisional score
+
+### Action space
+
+The agent can:
+
+- `review_artifact`
+- `classify_case`
+- `request_more_context`
+- `resolve_case`
+
+## Tasks
+
+### `late_delivery_refund`
+
+- Difficulty: easy
+- Goal: identify a valid item-not-received claim and issue the correct refund.
+
+### `partial_damage_partial_refund`
+
+- Difficulty: medium
+- Goal: refund only the damaged portion of a multi-item order.
+
+### `wrong_item_premium_exchange`
+
+- Difficulty: medium
+- Goal: confirm a fulfillment error and replace the item while enforcing the required return policy.
+
+### `safety_risk_damage_replacement`
+
+- Difficulty: hard
+- Goal: detect a safety-critical damage pattern and replace the item instead of offering a keep-item credit.
+
+### `suspicious_refund_abuse`
+
+- Difficulty: hard
+- Goal: detect when escalation is correct and an immediate refund is incorrect.
+
+## Endpoints
+
+- `POST /reset`
+- `POST /step`
+- `GET /state`
+- `GET /schema`
+- `GET /health`
+- `GET /metadata`
+- `GET /tasks`
+- `GET /grader`
+- `GET /baseline`
+
+## API key
+
+Put your OpenAI key in:
+
+- `dispute_desk_env/.env`
+
+Format:
+
+```bash
+OPENAI_API_KEY=your_key_here
+OPENAI_MODEL=gpt-5-mini-2025-08-07
+```
+
+The `.env` file is gitignored.
+The Docker image does not copy `.env`; pass it at runtime with `--env-file .env`.
+
+## Local run
+
+```bash
+cd dispute_desk_env
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+server
+```
+
+Or:
+
+```bash
+cd dispute_desk_env
+uvicorn server.app:app --host 0.0.0.0 --port 8000
+```
+
+## Python client
+
+```python
+from dispute_desk import DisputeDeskEnv
+from dispute_desk.models import CaseAction
+
+with DisputeDeskEnv(base_url="http://127.0.0.1:8000").sync() as env:
+    env.health()
+    env.tasks()
+    result = env.reset(task_id="late_delivery_refund")
+    result = env.step(CaseAction(action_type="review_artifact", artifact_id="order_summary"))
+    state = env.state()
+```
+
+The typed client supports the standard OpenEnv `reset()`, `step()`, and `state()` flow over WebSocket, plus convenience helpers for `health()`, `metadata()`, `schema()`, `tasks()`, and `grader()` over HTTP.
+
+## Baseline
+
+The baseline runner uses the OpenAI Python client and reads credentials from `OPENAI_API_KEY`.
+
+```bash
+cd dispute_desk_env
+dispute-desk-baseline
+```
+
+The run writes the latest score artifact to `outputs/evals/baseline_latest.json`.
+
+Pinned default baseline model:
+
+- `gpt-5-mini-2025-08-07`
+
+This snapshot choice is for reproducibility. It can be overridden with `OPENAI_MODEL`.
+
+## Docker
+
+```bash
+cd dispute_desk_env
+docker build -t dispute-desk-env -f server/Dockerfile .
+docker run --rm --env-file .env -p 8000:8000 dispute-desk-env
+```
+
+## Validation flow
+
+Run the full local submission check with:
+
+```bash
+cd dispute_desk_env
+python3.11 -m compileall dispute_desk tests server
+pytest
+openenv validate . --json
+```
+
+Once `OPENAI_API_KEY` is present in `.env`, run:
+
+```bash
+cd dispute_desk_env
+dispute-desk-baseline
+```
+
+## Baseline scores
+
+Validated local run on `2026-03-26` with `gpt-5-mini-2025-08-07`:
+
+- Average score: `0.9887`
+- `late_delivery_refund`: `0.9867` in `7` steps
+- `partial_damage_partial_refund`: `0.99` in `7` steps
+- `wrong_item_premium_exchange`: `0.9867` in `9` steps
+- `safety_risk_damage_replacement`: `0.99` in `9` steps
+- `suspicious_refund_abuse`: `0.99` in `8` steps
