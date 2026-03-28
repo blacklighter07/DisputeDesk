@@ -150,6 +150,13 @@ cd dispute_desk_env
 dispute-desk-baseline
 ```
 
+Submission-compatible root entrypoint:
+
+```bash
+cd dispute_desk_env
+python inference.py
+```
+
 The run writes the latest score artifact to `outputs/evals/baseline_latest.json`.
 
 Pinned default baseline model:

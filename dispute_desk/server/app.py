@@ -38,7 +38,8 @@ openenv_server.register_routes(app, mode=ServerMode.PRODUCTION)
 
 
 @app.post("/reset", response_model=ResetResponse, tags=["Environment"])
-def reset(request: ResetRequest) -> ResetResponse:
+def reset(request: ResetRequest | None = None) -> ResetResponse:
+    request = request or ResetRequest()
     observation = environment.reset(
         seed=request.seed,
         episode_id=request.episode_id,
