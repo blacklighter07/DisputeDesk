@@ -101,15 +101,14 @@ For competition-compatible inference, set:
 Format:
 
 ```bash
-API_BASE_URL=https://router.huggingface.co/v1
-HF_TOKEN=your_hf_or_api_key_here
-MODEL_NAME=gpt-5-mini-2025-08-07
+API_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your_key_here
 OPENAI_MODEL=gpt-5-mini-2025-08-07
 ```
 
 The `.env` file is gitignored.
 The Docker image does not copy `.env`; pass it at runtime with `--env-file .env`.
+The runtime also accepts `HF_TOKEN` and `MODEL_NAME` as compatibility aliases if an external validator provides those names.
 
 ## Local run
 
@@ -149,13 +148,13 @@ The typed client supports the standard OpenEnv `reset()`, `step()`, and `state()
 The baseline runner uses the OpenAI Python client and supports the competition variables:
 
 - `API_BASE_URL`
-- `HF_TOKEN`
-- `MODEL_NAME`
-
-It also accepts the existing local aliases:
-
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
+
+It also accepts compatibility aliases:
+
+- `HF_TOKEN`
+- `MODEL_NAME`
 
 ```bash
 cd dispute_desk_env
@@ -197,11 +196,11 @@ This repository is configured for a Hugging Face Docker Space:
 
 In your Space settings, add:
 
-- Secret: `HF_TOKEN`
-- Variable: `API_BASE_URL` with `https://router.huggingface.co/v1`
-- Variable or secret: `MODEL_NAME` if you want to override the pinned baseline model
+- Secret: `OPENAI_API_KEY`
+- Variable: `API_BASE_URL` with `https://api.openai.com/v1`
+- Variable or secret: `OPENAI_MODEL` if you want to override the pinned baseline model
 
-For local backward compatibility, `OPENAI_API_KEY` and `OPENAI_MODEL` are still accepted.
+If an external validator injects `HF_TOKEN` or `MODEL_NAME`, the runtime accepts those as aliases.
 
 Once the Space repo exists, you can push this repo to Hugging Face with:
 
@@ -221,7 +220,7 @@ pytest
 openenv validate . --json
 ```
 
-Once `HF_TOKEN` or `OPENAI_API_KEY` is present in `.env`, run:
+Once `OPENAI_API_KEY` is present in `.env`, run:
 
 ```bash
 cd dispute_desk_env

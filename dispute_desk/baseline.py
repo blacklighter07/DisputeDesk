@@ -68,7 +68,7 @@ def run_baseline(model: str | None = None) -> BaselineResponse:
     load_environment()
     api_key = get_api_key()
     if not api_key:
-        raise RuntimeError("HF_TOKEN or OPENAI_API_KEY is not set.")
+        raise RuntimeError("OPENAI_API_KEY is not set. HF_TOKEN is also accepted as a compatibility alias.")
     selected_model = model or get_model_name(DEFAULT_MODEL)
     client = OpenAI(
         base_url=get_api_base_url(),

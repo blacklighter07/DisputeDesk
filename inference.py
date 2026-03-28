@@ -20,7 +20,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Run the DisputeDesk inference baseline with the OpenAI client. "
-            "Reads API_BASE_URL, MODEL_NAME, and HF_TOKEN when available."
+            "Reads OPENAI_API_KEY and OPENAI_MODEL by default, with support for "
+            "API_BASE_URL, HF_TOKEN, and MODEL_NAME as compatibility aliases."
         )
     )
     parser.add_argument("--model", default=None, help="Override the OpenAI model id.")
@@ -40,7 +41,7 @@ def main() -> None:
     runtime = resolve_runtime_config(args.model)
     if not runtime.has_api_key:
         raise RuntimeError(
-            "Missing credentials. Set HF_TOKEN for competition runs, or OPENAI_API_KEY for local runs."
+            "Missing credentials. Set OPENAI_API_KEY, or provide HF_TOKEN as a compatibility alias."
         )
     print(
         (
