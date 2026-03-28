@@ -5,7 +5,7 @@ colorTo: gray
 sdk: docker
 app_port: 8000
 pinned: false
-short_description: OpenEnv dispute-resolution environment for evaluating agentic case handling.
+short_description: OpenEnv dispute-resolution environment.
 tags:
   - openenv
   - fastapi
