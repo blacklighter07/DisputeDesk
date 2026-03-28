@@ -12,7 +12,12 @@ from typing import Any
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
-from dispute_desk.config import get_openai_model, load_environment
+from dispute_desk.config import (
+    get_api_base_url,
+    get_api_key,
+    get_model_name,
+    load_environment,
+)
 from dispute_desk.models import (
     BaselineResponse,
     BaselineTaskResult,
@@ -61,10 +66,16 @@ class BaselineDecision(BaseModel):
 
 def run_baseline(model: str | None = None) -> BaselineResponse:
     load_environment()
-    if not os.getenv("OPENAI_API_KEY"):
-        raise RuntimeError("OPENAI_API_KEY is not set.")
-    selected_model = model or get_openai_model(DEFAULT_MODEL)
-    client = OpenAI(timeout=30.0, max_retries=1)
+    api_key = get_api_key()
+    if not api_key:
+        raise RuntimeError("HF_TOKEN or OPENAI_API_KEY is not set.")
+    selected_model = model or get_model_name(DEFAULT_MODEL)
+    client = OpenAI(
+        base_url=get_api_base_url(),
+        api_key=api_key,
+        timeout=30.0,
+        max_retries=1,
+    )
     results: list[BaselineTaskResult] = []
 
     for scenario in SCENARIOS:
@@ -278,7 +289,13 @@ def _choose_decision(
             model_decision=model_decision,
             heuristic_decision=heuristic_decision,
         )
-    except Exception:
+    except Exception as exc:
+        task_id = observation_payload.get("task_id", "unknown")
+        print(
+            f"[baseline] model request failed for {task_id}: {type(exc).__name__}: {exc}. "
+            "Falling back to deterministic heuristic.",
+            file=sys.stderr,
+        )
         return heuristic_decision
 
 

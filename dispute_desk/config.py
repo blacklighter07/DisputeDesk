@@ -21,6 +21,20 @@ def load_environment() -> None:
     _DOTENV_LOADED = True
 
 
-def get_openai_model(default_model: str) -> str:
+def get_api_base_url(default: str = "https://router.huggingface.co/v1") -> str:
     load_environment()
-    return os.getenv("OPENAI_MODEL", default_model)
+    return os.getenv("API_BASE_URL") or default
+
+
+def get_api_key() -> str | None:
+    load_environment()
+    return os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY")
+
+
+def get_model_name(default_model: str) -> str:
+    load_environment()
+    return os.getenv("MODEL_NAME") or os.getenv("OPENAI_MODEL", default_model)
+
+
+def get_openai_model(default_model: str) -> str:
+    return get_model_name(default_model)
