@@ -328,7 +328,10 @@ SCENARIOS: list[DisputeScenario] = [
         title="Safety Risk Damage Replacement",
         difficulty="hard",
         case_id="CASE-004",
-        objective="Detect the safety-critical damage pattern and replace the item instead of offering a keep-item credit.",
+        objective=(
+            "Determine the correct replacement workflow for safety-critical appliance damage, "
+            "including whether return is safe or should be waived."
+        ),
         case_summary=(
             "Buyer says a countertop blender arrived with a cracked pitcher and asks for a partial refund "
             "so they can keep using the base unit. The damage may create a product-safety issue."
@@ -403,6 +406,10 @@ SCENARIOS: list[DisputeScenario] = [
             "replacement_eta": (
                 "A replacement blender can ship within 2 business days from the regional warehouse."
             ),
+            "return_safety_policy": (
+                "If the damaged unit is cracked but can still be boxed without exposing handlers to loose fragments, "
+                "a prepaid return is required before the replacement is finalized."
+            ),
         },
         expected=ScenarioExpectation(
             required_artifact_ids=[
@@ -411,7 +418,11 @@ SCENARIOS: list[DisputeScenario] = [
                 "diagnostics_note",
                 "seller_policy",
             ],
-            required_context_keys=["safety_policy", "replacement_eta"],
+            required_context_keys=[
+                "safety_policy",
+                "replacement_eta",
+                "return_safety_policy",
+            ],
             classification="partial_damage",
             severity="high",
             resolution="replace_item",
@@ -427,7 +438,9 @@ SCENARIOS: list[DisputeScenario] = [
         title="Suspicious Refund Abuse",
         difficulty="hard",
         case_id="CASE-005",
-        objective="Detect abuse signals and escalate instead of issuing an immediate refund.",
+        objective=(
+            "Detect abuse signals and choose the correct trust action instead of issuing an immediate refund."
+        ),
         case_summary=(
             "Buyer claims the received sneakers are fake and requests an instant refund. "
             "There are multiple prior concessions on the same account."
@@ -499,8 +512,13 @@ SCENARIOS: list[DisputeScenario] = [
                 "Policy: repeat high-value counterfeit claims with contradictory delivery evidence "
                 "must be escalated to trust and safety before any refund is issued."
             ),
-            "appeasement_policy": (
-                "Small appeasement credits are not allowed on high-value counterfeit disputes while abuse review is pending."
+            "counterfeit_review_policy": (
+                "No instant refunds, courtesy credits, or appeasement offers are allowed while a high-value counterfeit claim "
+                "is being evaluated against seller authentication evidence."
+            ),
+            "abuse_pattern_policy": (
+                "Abuse-pattern policy: escalate counterfeit claims when the account shows at least 3 high-value concessions "
+                "totaling $250 or more within 45 days and delivery evidence still shows signed delivery with matching outbound weight."
             ),
         },
         expected=ScenarioExpectation(
@@ -510,7 +528,7 @@ SCENARIOS: list[DisputeScenario] = [
                 "concession_history",
                 "authentication_note",
             ],
-            required_context_keys=["trust_policy"],
+            required_context_keys=["trust_policy", "counterfeit_review_policy", "abuse_pattern_policy"],
             classification="suspected_abuse",
             severity="high",
             resolution="escalate",
@@ -526,8 +544,1082 @@ SCENARIOS: list[DisputeScenario] = [
 SCENARIO_MAP = {scenario.task_id: scenario for scenario in SCENARIOS}
 
 
-def get_scenario(task_id: str) -> DisputeScenario:
-    return SCENARIO_MAP[task_id]
+def _updated_artifacts(
+    base_scenario: DisputeScenario,
+    artifact_updates: dict[str, dict[str, str]],
+) -> list[ArtifactSpec]:
+    return [
+        artifact.model_copy(deep=True, update=artifact_updates.get(artifact.artifact_id, {}))
+        for artifact in base_scenario.artifacts
+    ]
+
+
+def _currency(value: float) -> str:
+    return f"${value:.2f}"
+
+
+TASK_VARIANTS: dict[str, list[DisputeScenario]] = {
+    task_id: [scenario]
+    for task_id, scenario in SCENARIO_MAP.items()
+}
+
+TASK_VARIANTS["safety_risk_damage_replacement"].append(
+    SCENARIO_MAP["safety_risk_damage_replacement"].model_copy(
+        deep=True,
+        update={
+            "case_id": "CASE-004B",
+            "case_summary": (
+                "Buyer says the blender jar arrived shattered with loose glass in the box and asks for a partial refund "
+                "so they can keep the motor base. The damage may make return shipment unsafe."
+            ),
+            "artifacts": _updated_artifacts(
+                SCENARIO_MAP["safety_risk_damage_replacement"],
+                {
+                    "photo_report": {
+                        "summary": "Photo shows shattered glass fragments and contamination inside the jar assembly.",
+                        "content": (
+                            "Photo review: multiple loose glass fragments are visible in the pitcher and packaging. "
+                            "The shattered jar leaves glass contamination around the food-contact assembly."
+                        ),
+                    },
+                    "diagnostics_note": {
+                        "summary": "Specialist flags consumer-handling hazard and unsafe return shipment.",
+                        "content": (
+                            "Diagnostics: the shattered pitcher is a safety risk and the loose glass contamination makes "
+                            "consumer repacking unsafe. Do not require the buyer to ship this unit back."
+                        ),
+                    },
+                    "seller_policy": {
+                        "summary": "Seller supports replacement and waives return when broken-glass shipment is unsafe.",
+                        "content": (
+                            "Policy: for damaged appliances with loose glass contamination, replacement is preferred and return "
+                            "may be waived when the unit cannot be repacked safely by the buyer."
+                        ),
+                    },
+                    "buyer_message": {
+                        "summary": "Buyer requests a partial refund and wants to keep the motor base.",
+                        "content": (
+                            "Buyer note: The blender jar arrived shattered with glass dust in the box. "
+                            "Give me a partial refund and I will keep the rest."
+                        ),
+                    },
+                },
+            ),
+            "extra_context": {
+                "safety_policy": (
+                    "Shattered food-contact glass on powered appliances is safety-critical. Continued use is prohibited."
+                ),
+                "replacement_eta": (
+                    "A replacement blender can ship within 1 business day from the regional warehouse."
+                ),
+                "return_safety_policy": (
+                    "If broken-glass contamination cannot be repacked safely, do not require return. "
+                    "Instruct local disposal and send the replacement."
+                ),
+            },
+            "expected": ScenarioExpectation(
+                required_artifact_ids=[
+                    "order_summary",
+                    "photo_report",
+                    "diagnostics_note",
+                    "seller_policy",
+                ],
+                required_context_keys=[
+                    "safety_policy",
+                    "replacement_eta",
+                    "return_safety_policy",
+                ],
+                classification="partial_damage",
+                severity="high",
+                resolution="replace_item",
+                refund_amount=0.00,
+                require_return=False,
+                escalation_target="none",
+                reason_code="unsafe_return_waived_replacement",
+                message_template="replacement_offered",
+            ),
+        },
+    )
+)
+
+TASK_VARIANTS["partial_damage_partial_refund"].append(
+    SCENARIO_MAP["partial_damage_partial_refund"].model_copy(
+        deep=True,
+        update={
+            "case_id": "CASE-002B",
+            "case_summary": (
+                "Buyer ordered three stoneware bowls and two arrived chipped. The buyer wants the full order refunded, "
+                "but one bowl is still usable."
+            ),
+            "order_total": 57.00,
+            "artifacts": _updated_artifacts(
+                SCENARIO_MAP["partial_damage_partial_refund"],
+                {
+                    "order_summary": {
+                        "summary": "Three bowls at $16 each plus $9 shipping.",
+                        "content": (
+                            "Order total: $57.00. Items: 3 stoneware bowls at $16.00 each. "
+                            "Shipping: $9.00 flat."
+                        ),
+                    },
+                    "photo_report": {
+                        "summary": "Photo review confirms exactly two chipped bowls.",
+                        "content": (
+                            "Photo review: 2 bowls are visibly chipped on unpacking. "
+                            "The remaining bowl appears intact and consistent with listing."
+                        ),
+                    },
+                    "buyer_message": {
+                        "summary": "Buyer requests a full order refund.",
+                        "content": (
+                            "Buyer note: Two bowls arrived chipped. I want a full refund for the whole order."
+                        ),
+                    },
+                },
+            ),
+            "extra_context": {
+                "replacement_eta": (
+                    "Replacement stock is backordered for 12 days. Partial refund for the damaged units is the fastest policy-compliant option."
+                ),
+                "shipping_refund_policy": (
+                    "Shipping is only refunded when the full order is unusable or returned in full."
+                ),
+            },
+            "expected": ScenarioExpectation(
+                required_artifact_ids=["order_summary", "photo_report", "seller_policy"],
+                required_context_keys=["replacement_eta"],
+                classification="partial_damage",
+                severity="medium",
+                resolution="refund_partial",
+                refund_amount=32.00,
+                require_return=False,
+                escalation_target="none",
+                reason_code="multiple_items_damaged",
+                message_template="partial_refund_approved",
+            ),
+        },
+    )
+)
+
+TASK_VARIANTS["wrong_item_premium_exchange"].append(
+    SCENARIO_MAP["wrong_item_premium_exchange"].model_copy(
+        deep=True,
+        update={
+            "case_id": "CASE-003B",
+            "case_summary": (
+                "Buyer ordered a canvas overshirt but received the wrong color and asks for a refund. "
+                "Because the order value is below the premium-return threshold, the replacement flow may not require return."
+            ),
+            "order_total": 86.00,
+            "artifacts": _updated_artifacts(
+                SCENARIO_MAP["wrong_item_premium_exchange"],
+                {
+                    "order_summary": {
+                        "summary": "Single overshirt order for $86.00.",
+                        "content": (
+                            "Order total: $86.00. Item ordered: charcoal canvas overshirt, size M. "
+                            "Delivery completed on 2026-03-18."
+                        ),
+                    },
+                    "warehouse_pick_ticket": {
+                        "content": (
+                            "Picker scan: OVERSHIRT-OLV-M scanned at pack station instead of OVERSHIRT-CHR-M. "
+                            "Pack station exception was not corrected before carrier handoff."
+                        ),
+                    },
+                    "buyer_photo_report": {
+                        "content": (
+                            "Photo review: delivered item tag reads OVERSHIRT-OLV-M. "
+                            "Listing confirmation in app shows ordered SKU OVERSHIRT-CHR-M."
+                        ),
+                    },
+                    "seller_response": {
+                        "content": (
+                            "Seller note: We packed the wrong overshirt by mistake. The ordered charcoal overshirt is in stock "
+                            "and can be sent immediately."
+                        ),
+                    },
+                },
+            ),
+            "extra_context": {
+                "inventory_status": (
+                    "The ordered charcoal overshirt is in stock and can ship within 24 hours."
+                ),
+                "return_policy": (
+                    "Wrong-item orders below $100 can be replaced immediately without requiring return of the incorrect item."
+                ),
+            },
+            "expected": ScenarioExpectation(
+                required_artifact_ids=[
+                    "order_summary",
+                    "warehouse_pick_ticket",
+                    "buyer_photo_report",
+                ],
+                required_context_keys=["inventory_status", "return_policy"],
+                classification="wrong_item",
+                severity="medium",
+                resolution="replace_item",
+                refund_amount=0.00,
+                require_return=False,
+                escalation_target="none",
+                reason_code="seller_misfulfillment_low_value_exchange",
+                message_template="replacement_offered",
+            ),
+        },
+    )
+)
+
+TASK_VARIANTS["wrong_item_premium_exchange"].append(
+    SCENARIO_MAP["wrong_item_premium_exchange"].model_copy(
+        deep=True,
+        update={
+            "case_id": "CASE-003C",
+            "case_summary": (
+                "Buyer ordered a slate field jacket but received the wrong color and says they cannot get to a drop-off "
+                "location this week. Local ops may allow a courier swap without requiring the buyer to complete a return."
+            ),
+            "order_total": 132.00,
+            "artifacts": _updated_artifacts(
+                SCENARIO_MAP["wrong_item_premium_exchange"],
+                {
+                    "order_summary": {
+                        "summary": "Single field jacket order for $132.00.",
+                        "content": (
+                            "Order total: $132.00. Item ordered: slate field jacket, size M. "
+                            "Delivery completed on 2026-03-18."
+                        ),
+                    },
+                    "warehouse_pick_ticket": {
+                        "summary": "Fulfillment scan shows the wrong field-jacket color was packed.",
+                        "content": (
+                            "Picker scan: FIELD-JACKET-OLV-M scanned at pack station instead of FIELD-JACKET-SLT-M. "
+                            "Pack station exception was not corrected before carrier handoff."
+                        ),
+                    },
+                    "buyer_photo_report": {
+                        "summary": "Buyer photo shows an olive field jacket with mismatched SKU tag.",
+                        "content": (
+                            "Photo review: delivered item tag reads FIELD-JACKET-OLV-M. "
+                            "Listing confirmation in app shows ordered SKU FIELD-JACKET-SLT-M."
+                        ),
+                    },
+                    "seller_response": {
+                        "summary": "Seller confirms stock exists and local courier recovery is available.",
+                        "content": (
+                            "Seller note: We packed the wrong field jacket by mistake. The ordered slate jacket is in stock "
+                            "and local courier pickup of the incorrect item can be arranged."
+                        ),
+                    },
+                    "buyer_message": {
+                        "summary": "Buyer wants the correct item but cannot travel to a return point.",
+                        "content": (
+                            "Buyer note: I still want the jacket I ordered, but I cannot get to a drop-off location this week."
+                        ),
+                    },
+                },
+            ),
+            "extra_context": {
+                "inventory_status": (
+                    "The ordered slate field jacket is in stock and can ship within 12 hours from the local hub."
+                ),
+                "return_policy": (
+                    "Local-ops policy: wrong-item orders at or below $150 can receive immediate replacement when courier "
+                    "retrieval of the incorrect item is scheduled. Orders above $150 require intake scan before the "
+                    "replacement is released."
+                ),
+            },
+            "expected": ScenarioExpectation(
+                required_artifact_ids=[
+                    "order_summary",
+                    "warehouse_pick_ticket",
+                    "buyer_photo_report",
+                ],
+                required_context_keys=["inventory_status", "return_policy"],
+                classification="wrong_item",
+                severity="medium",
+                resolution="replace_item",
+                refund_amount=0.00,
+                require_return=False,
+                escalation_target="none",
+                reason_code="seller_misfulfillment_courier_swap",
+                message_template="replacement_offered",
+            ),
+        },
+    )
+)
+
+TASK_VARIANTS["suspicious_refund_abuse"].append(
+    SCENARIO_MAP["suspicious_refund_abuse"].model_copy(
+        deep=True,
+        update={
+            "case_id": "CASE-005B",
+            "case_summary": (
+                "Buyer claims the sneakers are fake and demands an instant refund without return. "
+                "Seller authentication records and the buyer-provided serial evidence do not match."
+            ),
+            "artifacts": _updated_artifacts(
+                SCENARIO_MAP["suspicious_refund_abuse"],
+                {
+                    "concession_history": {
+                        "summary": "Only one low-value courtesy credit, but the current claim contains tampering indicators.",
+                        "content": (
+                            "Buyer account concessions: one $12 delivery-delay credit in the past 12 months. "
+                            "No prior counterfeit concessions are on record."
+                        ),
+                    },
+                    "authentication_note": {
+                        "summary": "Seller authentication passed and buyer-provided serial evidence contradicts the shipped pair.",
+                        "content": (
+                            "Marketplace authentication passed before shipment. Outbound serial on the shipped pair ends in 4182 "
+                            "and matches seller inventory records. The buyer-submitted serial image in the case file ends in 7719 "
+                            "and does not match the shipped pair."
+                        ),
+                    },
+                    "buyer_message": {
+                        "summary": "Buyer demands immediate refund without return.",
+                        "content": (
+                            "Buyer note: These shoes are fake. Refund me now. I will not return them."
+                        ),
+                    },
+                },
+            ),
+            "extra_context": {
+                "trust_policy": (
+                    "Policy: when buyer-provided evidence contradicts the shipped serial or authentication record, "
+                    "the counterfeit claim is not substantiated and should not be escalated as an open authenticity dispute."
+                ),
+                "counterfeit_review_policy": (
+                    "Deny the claim and block concessions when seller authentication is complete, buyer evidence conflicts with "
+                    "the shipped serial, and the buyer refuses return."
+                ),
+                "abuse_pattern_policy": (
+                    "Pattern-escalation policy: only escalate counterfeit claims for repeat abuse when the account reaches at least "
+                    "2 counterfeit-related or high-value concessions totaling $180 or more within 60 days. Accounts below that "
+                    "threshold should be handled on the authentication evidence."
+                ),
+            },
+            "expected": ScenarioExpectation(
+                required_artifact_ids=[
+                    "order_summary",
+                    "shipment_timeline",
+                    "concession_history",
+                    "authentication_note",
+                ],
+                required_context_keys=["trust_policy", "counterfeit_review_policy", "abuse_pattern_policy"],
+                classification="suspected_abuse",
+                severity="high",
+                resolution="deny",
+                refund_amount=0.00,
+                require_return=False,
+                escalation_target="none",
+                reason_code="counterfeit_claim_not_substantiated",
+                message_template="claim_denied",
+            ),
+        },
+    )
+)
+
+TASK_VARIANTS["safety_risk_damage_replacement"].append(
+    SCENARIO_MAP["safety_risk_damage_replacement"].model_copy(
+        deep=True,
+        update={
+            "case_id": "CASE-004C",
+            "case_summary": (
+                "Buyer reports the blender jar is cracked and unsafe to use. Replacement stock is delayed long enough that "
+                "policy may require a full refund instead of waiting on a replacement."
+            ),
+            "artifacts": _updated_artifacts(
+                SCENARIO_MAP["safety_risk_damage_replacement"],
+                {
+                    "seller_policy": {
+                        "summary": "Seller policy requires refund when safety-critical replacement lead time is too long.",
+                        "content": (
+                            "Policy: for safety-critical appliance damage, replacement is preferred only when a safe unit can "
+                            "arrive within 14 days. If replacement lead time exceeds that threshold, issue a full refund."
+                        ),
+                    },
+                    "buyer_message": {
+                        "summary": "Buyer says the blender is unusable and asks for the fastest resolution.",
+                        "content": (
+                            "Buyer note: The blender jar is cracked and I cannot use it safely. "
+                            "I need the fastest policy-compliant resolution."
+                        ),
+                    },
+                },
+            ),
+            "extra_context": {
+                "safety_policy": (
+                    "Cracked food-contact components on powered appliances are safety-critical. "
+                    "Continued use is prohibited."
+                ),
+                "replacement_eta": (
+                    "A replacement blender is backordered for 21 business days."
+                ),
+                "return_safety_policy": (
+                    "If safety-critical appliance replacement will exceed 14 days, do not require return. "
+                    "Issue a full refund and instruct local disposal of the damaged unit."
+                ),
+            },
+            "expected": ScenarioExpectation(
+                required_artifact_ids=[
+                    "order_summary",
+                    "photo_report",
+                    "diagnostics_note",
+                    "seller_policy",
+                ],
+                required_context_keys=[
+                    "safety_policy",
+                    "replacement_eta",
+                    "return_safety_policy",
+                ],
+                classification="partial_damage",
+                severity="high",
+                resolution="refund_full",
+                refund_amount=182.00,
+                require_return=False,
+                escalation_target="none",
+                reason_code="safety_risk_no_timely_replacement",
+                message_template="refund_approved",
+            ),
+        },
+    )
+)
+
+TASK_VARIANTS["suspicious_refund_abuse"].append(
+    SCENARIO_MAP["suspicious_refund_abuse"].model_copy(
+        deep=True,
+        update={
+            "case_id": "CASE-005C",
+            "case_summary": (
+                "Buyer claims the sneakers are fake and the serial photo they submitted conflicts with the case file, "
+                "but seller authentication chain-of-custody is incomplete because fulfillment used a manual override."
+            ),
+            "artifacts": _updated_artifacts(
+                SCENARIO_MAP["suspicious_refund_abuse"],
+                {
+                    "concession_history": {
+                        "summary": "No repeat abuse pattern, but the current claim needs manual authenticity review.",
+                        "content": (
+                            "Buyer account concessions: one $14 late-delivery coupon in the past 12 months. "
+                            "No prior counterfeit concessions are on record."
+                        ),
+                    },
+                    "authentication_note": {
+                        "summary": "Authentication chain is incomplete because manual fulfillment bypassed the outbound serial check.",
+                        "content": (
+                            "Marketplace authentication was initiated, but the seller used a manual fulfillment override after "
+                            "the authentication checkpoint. The outbound serial photo is missing, so the buyer-submitted serial "
+                            "cannot be used to auto-deny the claim."
+                        ),
+                    },
+                    "buyer_message": {
+                        "summary": "Buyer demands action and includes a serial photo that conflicts with the listing record.",
+                        "content": (
+                            "Buyer note: These shoes are fake. The serial on my pair does not match the listing, so fix this."
+                        ),
+                    },
+                },
+            ),
+            "extra_context": {
+                "trust_policy": (
+                    "Policy: when seller authentication chain-of-custody is incomplete or fulfillment bypassed the outbound "
+                    "serial check, contradictory buyer serial evidence is insufficient to deny. Escalate to trust and safety."
+                ),
+                "counterfeit_review_policy": (
+                    "Do not approve a refund or deny as abuse while authenticity evidence is incomplete. "
+                    "Manual review is required."
+                ),
+                "abuse_pattern_policy": (
+                    "Pattern-escalation policy: below-threshold concession history does not justify denial when any authentication "
+                    "checkpoint is missing. Missing chain-of-custody always requires manual review."
+                ),
+            },
+            "expected": ScenarioExpectation(
+                required_artifact_ids=[
+                    "order_summary",
+                    "shipment_timeline",
+                    "concession_history",
+                    "authentication_note",
+                ],
+                required_context_keys=["trust_policy", "counterfeit_review_policy", "abuse_pattern_policy"],
+                classification="suspected_abuse",
+                severity="high",
+                resolution="escalate",
+                refund_amount=0.00,
+                require_return=False,
+                escalation_target="trust_safety",
+                reason_code="authentication_chain_gap_manual_review",
+                message_template="escalated_for_review",
+            ),
+        },
+    )
+)
+
+TASK_VARIANTS["suspicious_refund_abuse"].append(
+    SCENARIO_MAP["suspicious_refund_abuse"].model_copy(
+        deep=True,
+        update={
+            "case_id": "CASE-005D",
+            "case_summary": (
+                "Buyer claims the sneakers are fake and demands an instant refund. Seller authentication passed, but "
+                "linked-account signals and cumulative counterfeit-related concessions may require trust-and-safety review."
+            ),
+            "artifacts": _updated_artifacts(
+                SCENARIO_MAP["suspicious_refund_abuse"],
+                {
+                    "concession_history": {
+                        "summary": "Two concessions on this account plus one linked-account counterfeit refund exceed the abuse threshold.",
+                        "content": (
+                            "Buyer account concessions: $96 damaged-item credit and $74 appeasement refund in past 60 days. "
+                            "Linked-account review: the same device fingerprint and payment instrument are associated with a "
+                            "$118 counterfeit-claim refund on a connected account in the same window."
+                        ),
+                    },
+                    "authentication_note": {
+                        "summary": "Seller authentication passed and chain-of-custody is complete.",
+                        "content": (
+                            "Marketplace authentication passed before shipment. SKU, box tag, and serial numbers match seller "
+                            "inventory records, and the outbound serial photo is complete."
+                        ),
+                    },
+                    "buyer_message": {
+                        "summary": "Buyer alleges the item is fake and demands instant action.",
+                        "content": (
+                            "Buyer note: These shoes look fake. Refund me now. I no longer have the packaging."
+                        ),
+                    },
+                },
+            ),
+            "extra_context": {
+                "trust_policy": (
+                    "Policy: when linked-account signals connect the current counterfeit claim to prior high-value concessions, "
+                    "escalate to trust and safety before any denial or refund is issued."
+                ),
+                "counterfeit_review_policy": (
+                    "Do not deny or refund while a linked-account counterfeit-abuse review is open, even if seller "
+                    "authentication is complete."
+                ),
+                "abuse_pattern_policy": (
+                    "Linked-pattern policy: escalate when counterfeit-related concessions across connected accounts total $250 "
+                    "or more within 60 days, even if the current account alone is below the repeat-claim count threshold."
+                ),
+            },
+            "expected": ScenarioExpectation(
+                required_artifact_ids=[
+                    "order_summary",
+                    "shipment_timeline",
+                    "concession_history",
+                    "authentication_note",
+                ],
+                required_context_keys=["trust_policy", "counterfeit_review_policy", "abuse_pattern_policy"],
+                classification="suspected_abuse",
+                severity="high",
+                resolution="escalate",
+                refund_amount=0.00,
+                require_return=False,
+                escalation_target="trust_safety",
+                reason_code="linked_account_abuse_pattern",
+                message_template="escalated_for_review",
+            ),
+        },
+    )
+)
+
+
+def get_scenario(
+    task_id: str,
+    seed: int | None = None,
+    variant_index: int | None = None,
+) -> DisputeScenario:
+    variants = TASK_VARIANTS[task_id]
+    if variant_index is not None:
+        return variants[variant_index % len(variants)]
+    if seed is None:
+        return variants[0]
+    scenario = variants[seed % len(variants)]
+    cycle = seed // len(variants)
+    return _parameterize_seeded_scenario(scenario, cycle=cycle)
+
+
+def _parameterize_seeded_scenario(
+    scenario: DisputeScenario,
+    cycle: int,
+) -> DisputeScenario:
+    if cycle <= 0:
+        return scenario
+
+    if scenario.task_id == "partial_damage_partial_refund":
+        return _parameterize_partial_damage_scenario(scenario, cycle=cycle)
+    if scenario.task_id == "wrong_item_premium_exchange":
+        return _parameterize_wrong_item_scenario(scenario, cycle=cycle)
+    if scenario.task_id == "safety_risk_damage_replacement":
+        return _parameterize_safety_scenario(scenario, cycle=cycle)
+    if scenario.task_id == "suspicious_refund_abuse":
+        return _parameterize_abuse_scenario(scenario, cycle=cycle)
+    return scenario
+
+
+def _parameterize_partial_damage_scenario(
+    scenario: DisputeScenario,
+    cycle: int,
+) -> DisputeScenario:
+    if scenario.case_id == "CASE-002":
+        item_count = 2
+        damaged_count = 1
+        unit_price = float(18 + (cycle % 4))
+        shipping = float(10 + (cycle % 3))
+        order_total = round((item_count * unit_price) + shipping, 2)
+        return scenario.model_copy(
+            deep=True,
+            update={
+                "order_total": order_total,
+                "artifacts": _updated_artifacts(
+                    scenario,
+                    {
+                        "order_summary": {
+                            "summary": f"Two mugs at {_currency(unit_price)} each plus {_currency(shipping)} shipping.",
+                            "content": (
+                                f"Order total: {_currency(order_total)}. Items: {item_count} ceramic mugs at {_currency(unit_price)} each. "
+                                f"Shipping: {_currency(shipping)} flat."
+                            ),
+                        },
+                        "photo_report": {
+                            "summary": "Photo review confirms exactly one broken mug.",
+                            "content": (
+                                f"Photo review: {damaged_count} mug is visibly shattered on unpacking. "
+                                "The remaining mug appears intact and consistent with listing."
+                            ),
+                        },
+                    },
+                ),
+                "expected": ScenarioExpectation(
+                    required_artifact_ids=["order_summary", "photo_report", "seller_policy"],
+                    required_context_keys=["replacement_eta"],
+                    classification="partial_damage",
+                    severity="medium",
+                    resolution="refund_partial",
+                    refund_amount=round(unit_price * damaged_count, 2),
+                    require_return=False,
+                    escalation_target="none",
+                    reason_code="single_item_damaged",
+                    message_template="partial_refund_approved",
+                ),
+            },
+        )
+
+    if scenario.case_id == "CASE-002B":
+        item_count = 3 + (cycle % 2)
+        damaged_count = 2 + (cycle % 2)
+        unit_price = float(14 + (cycle % 4))
+        shipping = float(8 + (cycle % 3))
+        order_total = round((item_count * unit_price) + shipping, 2)
+        return scenario.model_copy(
+            deep=True,
+            update={
+                "order_total": order_total,
+                "artifacts": _updated_artifacts(
+                    scenario,
+                    {
+                        "order_summary": {
+                            "summary": (
+                                f"{item_count} bowls at {_currency(unit_price)} each plus {_currency(shipping)} shipping."
+                            ),
+                            "content": (
+                                f"Order total: {_currency(order_total)}. Items: {item_count} stoneware bowls at {_currency(unit_price)} each. "
+                                f"Shipping: {_currency(shipping)} flat."
+                            ),
+                        },
+                        "photo_report": {
+                            "summary": f"Photo review confirms exactly {damaged_count} chipped bowls.",
+                            "content": (
+                                f"Photo review: {damaged_count} bowls are visibly chipped on unpacking. "
+                                "The remaining bowls appear intact and consistent with listing."
+                            ),
+                        },
+                    },
+                ),
+                "expected": ScenarioExpectation(
+                    required_artifact_ids=["order_summary", "photo_report", "seller_policy"],
+                    required_context_keys=["replacement_eta"],
+                    classification="partial_damage",
+                    severity="medium",
+                    resolution="refund_partial",
+                    refund_amount=round(unit_price * damaged_count, 2),
+                    require_return=False,
+                    escalation_target="none",
+                    reason_code="multiple_items_damaged",
+                    message_template="partial_refund_approved",
+                ),
+            },
+        )
+
+    return scenario
+
+
+def _parameterize_wrong_item_scenario(
+    scenario: DisputeScenario,
+    cycle: int,
+) -> DisputeScenario:
+    if scenario.case_id == "CASE-003":
+        threshold = 100 + ((cycle % 5) * 10)
+        order_total = float(threshold + 38 + ((cycle % 4) * 6))
+        return scenario.model_copy(
+            deep=True,
+            update={
+                "order_total": order_total,
+                "artifacts": _updated_artifacts(
+                    scenario,
+                    {
+                        "order_summary": {
+                            "summary": f"Single premium coat order for {_currency(order_total)}.",
+                            "content": (
+                                f"Order total: {_currency(order_total)}. Item ordered: navy wool coat, size M. "
+                                "Delivery completed on 2026-03-18."
+                            ),
+                        },
+                    },
+                ),
+                "extra_context": {
+                    "inventory_status": scenario.extra_context["inventory_status"],
+                    "return_policy": (
+                        f"Wrong-item orders above ${threshold} require a prepaid return of the incorrect item before "
+                        "the replacement is finalized."
+                    ),
+                },
+            },
+        )
+
+    if scenario.case_id == "CASE-003B":
+        threshold = 90 + ((cycle % 5) * 10)
+        order_total = float(threshold - (18 + ((cycle % 3) * 4)))
+        return scenario.model_copy(
+            deep=True,
+            update={
+                "order_total": order_total,
+                "artifacts": _updated_artifacts(
+                    scenario,
+                    {
+                        "order_summary": {
+                            "summary": f"Single overshirt order for {_currency(order_total)}.",
+                            "content": (
+                                f"Order total: {_currency(order_total)}. Item ordered: charcoal canvas overshirt, size M. "
+                                "Delivery completed on 2026-03-18."
+                            ),
+                        },
+                    },
+                ),
+                "extra_context": {
+                    "inventory_status": scenario.extra_context["inventory_status"],
+                    "return_policy": (
+                        f"Wrong-item orders below ${threshold} can be replaced immediately without requiring return of "
+                        "the incorrect item."
+                    ),
+                },
+            },
+        )
+
+    if scenario.case_id == "CASE-003C":
+        threshold = 150 + ((cycle % 4) * 10)
+        order_total = float(threshold - (18 + ((cycle % 3) * 3)))
+        return scenario.model_copy(
+            deep=True,
+            update={
+                "order_total": order_total,
+                "artifacts": _updated_artifacts(
+                    scenario,
+                    {
+                        "order_summary": {
+                            "summary": f"Single field jacket order for {_currency(order_total)}.",
+                            "content": (
+                                f"Order total: {_currency(order_total)}. Item ordered: slate field jacket, size M. "
+                                "Delivery completed on 2026-03-18."
+                            ),
+                        },
+                    },
+                ),
+                "extra_context": {
+                    "inventory_status": scenario.extra_context["inventory_status"],
+                    "return_policy": (
+                        f"Local-ops policy: wrong-item orders at or below ${threshold} can receive immediate replacement "
+                        "when courier retrieval of the incorrect item is scheduled. "
+                        f"Orders above ${threshold} require intake scan before the replacement is released."
+                    ),
+                },
+            },
+        )
+
+    return scenario
+
+
+def _parameterize_safety_scenario(
+    scenario: DisputeScenario,
+    cycle: int,
+) -> DisputeScenario:
+    if scenario.case_id == "CASE-004":
+        replacement_days = 2 + (cycle % 4)
+        return scenario.model_copy(
+            deep=True,
+            update={
+                "extra_context": {
+                    "safety_policy": scenario.extra_context["safety_policy"],
+                    "replacement_eta": (
+                        f"A replacement blender can ship within {replacement_days} business days from the regional warehouse."
+                    ),
+                    "return_safety_policy": scenario.extra_context["return_safety_policy"],
+                },
+            },
+        )
+
+    if scenario.case_id == "CASE-004B":
+        replacement_days = 1 + (cycle % 4)
+        return scenario.model_copy(
+            deep=True,
+            update={
+                "extra_context": {
+                    "safety_policy": scenario.extra_context["safety_policy"],
+                    "replacement_eta": (
+                        f"A replacement blender can ship within {replacement_days} business days from the regional warehouse."
+                    ),
+                    "return_safety_policy": scenario.extra_context["return_safety_policy"],
+                },
+            },
+        )
+
+    if scenario.case_id == "CASE-004C":
+        threshold_days = 10 + ((cycle % 3) * 2)
+        replacement_days = threshold_days + 7 + (cycle % 4)
+        return scenario.model_copy(
+            deep=True,
+            update={
+                "artifacts": _updated_artifacts(
+                    scenario,
+                    {
+                        "seller_policy": {
+                            "summary": "Seller policy requires refund when safety-critical replacement lead time is too long.",
+                            "content": (
+                                "Policy: for safety-critical appliance damage, replacement is preferred only when a safe unit can "
+                                f"arrive within {threshold_days} days. If replacement lead time exceeds that threshold, "
+                                "issue a full refund."
+                            ),
+                        },
+                    },
+                ),
+                "extra_context": {
+                    "safety_policy": scenario.extra_context["safety_policy"],
+                    "replacement_eta": (
+                        f"A replacement blender is backordered for {replacement_days} business days."
+                    ),
+                    "return_safety_policy": (
+                        f"If safety-critical appliance replacement will exceed {threshold_days} days, do not require return. "
+                        "Issue a full refund and instruct local disposal of the damaged unit."
+                    ),
+                },
+            },
+        )
+
+    return scenario
+
+
+def _parameterize_abuse_scenario(
+    scenario: DisputeScenario,
+    cycle: int,
+) -> DisputeScenario:
+    if scenario.case_id == "CASE-005":
+        window_days = 30 + ((cycle % 3) * 15)
+        threshold_count = 2 + (cycle % 2)
+        threshold_total = 220 + ((cycle % 4) * 20)
+        amounts = [
+            float(76 + ((cycle * 5) % 17)),
+            float(68 + ((cycle * 7) % 19)),
+            float(104 + ((cycle * 3) % 23)),
+        ]
+        total_amount = round(sum(amounts), 2)
+        return scenario.model_copy(
+            deep=True,
+            update={
+                "artifacts": _updated_artifacts(
+                    scenario,
+                    {
+                        "concession_history": {
+                            "summary": (
+                                f"Three high-value concessions totaling {_currency(total_amount)} in the last {window_days} days."
+                            ),
+                            "content": (
+                                f"Buyer account concessions: {_currency(amounts[0])} missing-item refund, "
+                                f"{_currency(amounts[1])} damaged-item credit, {_currency(amounts[2])} counterfeit-claim refund "
+                                f"in past {window_days} days."
+                            ),
+                        },
+                    },
+                ),
+                "extra_context": {
+                    "trust_policy": (
+                        "Policy: repeat high-value counterfeit claims with contradictory delivery evidence "
+                        "must be escalated to trust and safety before any refund is issued."
+                    ),
+                    "counterfeit_review_policy": (
+                        "No instant refunds, courtesy credits, or appeasement offers are allowed while a high-value counterfeit claim "
+                        "is being evaluated against seller authentication evidence."
+                    ),
+                    "abuse_pattern_policy": (
+                        f"Abuse-pattern policy: escalate counterfeit claims when the account shows at least {threshold_count} "
+                        f"high-value concessions totaling {_currency(threshold_total)} or more within {window_days} days and "
+                        "delivery evidence still shows signed delivery with matching outbound weight."
+                    ),
+                },
+            },
+        )
+
+    if scenario.case_id == "CASE-005B":
+        courtesy_amount = float(10 + ((cycle % 4) * 4))
+        threshold_count = 2 + (cycle % 2)
+        threshold_total = 170 + ((cycle % 4) * 20)
+        shipped_serial = 4100 + ((cycle * 37) % 700)
+        buyer_serial = shipped_serial + 511
+        return scenario.model_copy(
+            deep=True,
+            update={
+                "artifacts": _updated_artifacts(
+                    scenario,
+                    {
+                        "concession_history": {
+                            "summary": "Only one low-value courtesy credit, but the current claim contains tampering indicators.",
+                            "content": (
+                                f"Buyer account concessions: one {_currency(courtesy_amount)} delivery-delay credit in the past 12 months. "
+                                "No prior counterfeit concessions are on record."
+                            ),
+                        },
+                        "authentication_note": {
+                            "summary": "Seller authentication passed and buyer-provided serial evidence contradicts the shipped pair.",
+                            "content": (
+                                "Marketplace authentication passed before shipment. "
+                                f"Outbound serial on the shipped pair ends in {shipped_serial} and matches seller inventory records. "
+                                f"The buyer-submitted serial image in the case file ends in {buyer_serial} and does not match the shipped pair."
+                            ),
+                        },
+                    },
+                ),
+                "extra_context": {
+                    "trust_policy": (
+                        "Policy: when buyer-provided evidence contradicts the shipped serial or authentication record, "
+                        "the counterfeit claim is not substantiated and should not be escalated as an open authenticity dispute."
+                    ),
+                    "counterfeit_review_policy": (
+                        "Deny the claim and block concessions when seller authentication is complete, buyer evidence conflicts with "
+                        "the shipped serial, and the buyer refuses return."
+                    ),
+                    "abuse_pattern_policy": (
+                        f"Pattern-escalation policy: only escalate counterfeit claims for repeat abuse when the account reaches at least "
+                        f"{threshold_count} counterfeit-related or high-value concessions totaling {_currency(threshold_total)} or more within 60 days. "
+                        "Accounts below that threshold should be handled on the authentication evidence."
+                    ),
+                },
+            },
+        )
+
+    if scenario.case_id == "CASE-005C":
+        courtesy_amount = float(12 + ((cycle % 4) * 5))
+        window_days = 45 + ((cycle % 3) * 15)
+        threshold_total = 180 + ((cycle % 4) * 20)
+        gap_descriptions = [
+            (
+                "the seller used a manual fulfillment override after the authentication checkpoint",
+                "the outbound serial photo is missing",
+            ),
+            (
+                "the warehouse exception flow bypassed the outbound serial checkpoint",
+                "chain-of-custody is incomplete",
+            ),
+            (
+                "the seller used a manual fulfillment override after labeling",
+                "the outbound serial image was never captured",
+            ),
+        ]
+        checkpoint_issue, missing_record = gap_descriptions[cycle % len(gap_descriptions)]
+        return scenario.model_copy(
+            deep=True,
+            update={
+                "artifacts": _updated_artifacts(
+                    scenario,
+                    {
+                        "concession_history": {
+                            "summary": "No repeat abuse pattern, but the current claim needs manual authenticity review.",
+                            "content": (
+                                f"Buyer account concessions: one {_currency(courtesy_amount)} late-delivery coupon in the past {window_days} days. "
+                                "No prior counterfeit concessions are on record."
+                            ),
+                        },
+                        "authentication_note": {
+                            "summary": "Authentication chain is incomplete because fulfillment bypassed a serial checkpoint.",
+                            "content": (
+                                "Marketplace authentication was initiated, but "
+                                f"{checkpoint_issue}. {missing_record.capitalize()}, so the buyer-submitted serial "
+                                "cannot be used to auto-deny the claim."
+                            ),
+                        },
+                    },
+                ),
+                "extra_context": {
+                    "trust_policy": (
+                        "Policy: when seller authentication chain-of-custody is incomplete or fulfillment bypassed the outbound "
+                        "serial check, contradictory buyer serial evidence is insufficient to deny. Escalate to trust and safety."
+                    ),
+                    "counterfeit_review_policy": (
+                        "Do not approve a refund or deny as abuse while authenticity evidence is incomplete. "
+                        "Manual review is required."
+                    ),
+                    "abuse_pattern_policy": (
+                        f"Pattern-escalation policy: below-threshold concession history totaling less than {_currency(threshold_total)} "
+                        "does not justify denial when any authentication checkpoint is missing. Missing chain-of-custody always requires manual review."
+                    ),
+                },
+            },
+        )
+
+    if scenario.case_id == "CASE-005D":
+        window_days = 45 + ((cycle % 3) * 15)
+        threshold_total = 240 + ((cycle % 4) * 25)
+        local_amounts = [
+            float(84 + ((cycle * 3) % 14)),
+            float(68 + ((cycle * 5) % 12)),
+        ]
+        linked_amount = float(threshold_total - sum(local_amounts) + 28 + (cycle % 9))
+        return scenario.model_copy(
+            deep=True,
+            update={
+                "artifacts": _updated_artifacts(
+                    scenario,
+                    {
+                        "concession_history": {
+                            "summary": "Linked-account counterfeit concessions exceed the network-abuse threshold.",
+                            "content": (
+                                f"Buyer account concessions: {_currency(local_amounts[0])} damaged-item credit and "
+                                f"{_currency(local_amounts[1])} appeasement refund in past {window_days} days. "
+                                "Linked-account review: the same device fingerprint and payment instrument are associated with a "
+                                f"{_currency(linked_amount)} counterfeit-claim refund on a connected account in the same window."
+                            ),
+                        },
+                    },
+                ),
+                "extra_context": {
+                    "trust_policy": (
+                        "Policy: when linked-account signals connect the current counterfeit claim to prior high-value concessions, "
+                        "escalate to trust and safety before any denial or refund is issued."
+                    ),
+                    "counterfeit_review_policy": (
+                        "Do not deny or refund while a linked-account counterfeit-abuse review is open, even if seller "
+                        "authentication is complete."
+                    ),
+                    "abuse_pattern_policy": (
+                        f"Linked-pattern policy: escalate when counterfeit-related concessions across connected accounts total "
+                        f"{_currency(threshold_total)} or more within {window_days} days, even if the current account alone is below "
+                        "the repeat-claim count threshold."
+                    ),
+                },
+            },
+        )
+
+    return scenario
 
 
 def task_catalog() -> list[TaskSummary]:

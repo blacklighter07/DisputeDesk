@@ -16,7 +16,13 @@ from dispute_desk.models import (
     GraderResponse,
     ResolutionDraft,
 )
-from dispute_desk.scenarios import DisputeScenario, SCENARIOS, get_scenario, task_catalog
+from dispute_desk.scenarios import (
+    TASK_VARIANTS,
+    DisputeScenario,
+    SCENARIOS,
+    get_scenario,
+    task_catalog,
+)
 
 
 class DisputeDeskEnvironment(Environment[CaseAction, CaseObservation, EnvironmentStateModel]):
@@ -39,7 +45,7 @@ class DisputeDeskEnvironment(Environment[CaseAction, CaseObservation, Environmen
     ) -> CaseObservation:
         if seed is not None:
             self._rng.seed(seed)
-        scenario = self._pick_scenario(task_id=task_id)
+        scenario = self._pick_scenario(task_id=task_id, seed=seed)
         self._scenario = scenario
         self._revealed_artifacts = {}
         self._last_report = None
@@ -126,11 +132,16 @@ class DisputeDeskEnvironment(Environment[CaseAction, CaseObservation, Environmen
     def get_metadata(self) -> EnvironmentMetadata:
         return EnvironmentMetadata(**self.metadata())
 
-    def _pick_scenario(self, task_id: str | None) -> DisputeScenario:
+    def _pick_scenario(self, task_id: str | None, seed: int | None) -> DisputeScenario:
         effective_task_id = task_id or self._default_task_id
         if effective_task_id:
-            return get_scenario(effective_task_id)
-        return self._rng.choice(SCENARIOS)
+            return get_scenario(effective_task_id, seed=seed)
+
+        scenario = self._rng.choice(SCENARIOS)
+        variant_count = len(TASK_VARIANTS[scenario.task_id])
+        if variant_count == 1:
+            return scenario
+        return get_scenario(scenario.task_id, variant_index=self._rng.randrange(variant_count))
 
     def _handle_review_artifact(
         self, action: CaseAction, scenario: DisputeScenario

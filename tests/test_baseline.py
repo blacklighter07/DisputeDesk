@@ -34,3 +34,44 @@ def test_fallback_decision_matches_expected_policy(task_id: str):
     assert decision.escalation_target == scenario.expected.escalation_target
     assert decision.reason_code == scenario.expected.reason_code
     assert decision.message_template == scenario.expected.message_template
+
+
+@pytest.mark.parametrize(
+    ("task_id", "seed"),
+    [
+        ("partial_damage_partial_refund", 1),
+        ("partial_damage_partial_refund", 2),
+        ("wrong_item_premium_exchange", 1),
+        ("wrong_item_premium_exchange", 2),
+        ("safety_risk_damage_replacement", 1),
+        ("safety_risk_damage_replacement", 2),
+        ("suspicious_refund_abuse", 1),
+        ("suspicious_refund_abuse", 2),
+        ("suspicious_refund_abuse", 3),
+        ("suspicious_refund_abuse", 4),
+    ],
+)
+def test_fallback_decision_matches_variant_policy(task_id: str, seed: int):
+    scenario = get_scenario(task_id, seed=seed)
+    environment = DisputeDeskEnvironment(default_task_id=task_id)
+    observation = environment.reset(task_id=task_id, seed=seed)
+
+    for artifact in observation.available_artifacts:
+        observation = environment.step(
+            CaseAction(action_type="review_artifact", artifact_id=artifact.artifact_id)
+        )
+    for context_key in observation.metadata["available_context_keys"]:
+        observation = environment.step(
+            CaseAction(action_type="request_more_context", context_key=context_key)
+        )
+
+    decision = _fallback_decision(observation.model_dump(mode="json"))
+
+    assert decision.classification == scenario.expected.classification
+    assert decision.severity == scenario.expected.severity
+    assert decision.resolution == scenario.expected.resolution
+    assert decision.refund_amount == scenario.expected.refund_amount
+    assert decision.require_return == scenario.expected.require_return
+    assert decision.escalation_target == scenario.expected.escalation_target
+    assert decision.reason_code == scenario.expected.reason_code
+    assert decision.message_template == scenario.expected.message_template

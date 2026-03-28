@@ -1,3 +1,18 @@
+---
+title: DisputeDesk
+colorFrom: blue
+colorTo: gray
+sdk: docker
+app_port: 8000
+pinned: false
+short_description: OpenEnv dispute-resolution environment for evaluating agentic case handling.
+tags:
+  - openenv
+  - fastapi
+  - agents
+  - reinforcement-learning
+---
+
 # DisputeDesk
 
 `DisputeDesk` is a real-world environment for marketplace dispute resolution. The agent acts as an operations specialist who must inspect case evidence, classify disputes, and issue policy-compliant outcomes.
@@ -13,6 +28,7 @@ The package follows the OpenEnv 3-component pattern:
 - Real task: support and trust teams resolve these disputes every day.
 - Deterministic grading: success can be measured against policy, evidence review, refund math, and escalation correctness.
 - Reward shaping: the agent receives credit for useful intermediate work, not only the final answer.
+- Seeded hard-case variants: the hardest tasks include seeded variants under the same task id, so agents must read evidence content instead of only memorizing a fixed action sequence.
 
 ## Environment shape
 
@@ -57,12 +73,12 @@ The agent can:
 ### `safety_risk_damage_replacement`
 
 - Difficulty: hard
-- Goal: detect a safety-critical damage pattern and replace the item instead of offering a keep-item credit.
+- Goal: determine the correct replacement workflow for safety-critical damage, including whether return is required or must be waived for safe disposal.
 
 ### `suspicious_refund_abuse`
 
 - Difficulty: hard
-- Goal: detect when escalation is correct and an immediate refund is incorrect.
+- Goal: detect abuse signals and choose the correct trust action, including deny-vs-escalate branches under seeded variants.
 
 ## Endpoints
 
@@ -146,8 +162,30 @@ This snapshot choice is for reproducibility. It can be overridden with `OPENAI_M
 
 ```bash
 cd dispute_desk_env
-docker build -t dispute-desk-env -f server/Dockerfile .
+docker build -t dispute-desk-env .
 docker run --rm --env-file .env -p 8000:8000 dispute-desk-env
+```
+
+The repository root now contains the Dockerfile expected by Hugging Face Docker Spaces.
+
+## Hugging Face Space Deployment
+
+This repository is configured for a Hugging Face Docker Space:
+
+- `README.md` contains the required YAML frontmatter with `sdk: docker`
+- the Space is configured to expose port `8000`
+- the root `Dockerfile` builds and runs the FastAPI environment directly
+
+In your Space settings, add:
+
+- Secret: `OPENAI_API_KEY`
+- Variable or secret: `OPENAI_MODEL` if you want to override the pinned baseline model
+
+Once the Space repo exists, you can push this repo to Hugging Face with:
+
+```bash
+git remote add hf https://huggingface.co/spaces/<your-hf-username>/DisputeDesk
+git push hf main
 ```
 
 ## Validation flow
@@ -172,9 +210,9 @@ dispute-desk-baseline
 
 Validated local run on `2026-03-26` with `gpt-5-mini-2025-08-07`:
 
-- Average score: `0.9887`
+- Average score: `0.9847`
 - `late_delivery_refund`: `0.9867` in `7` steps
 - `partial_damage_partial_refund`: `0.99` in `7` steps
 - `wrong_item_premium_exchange`: `0.9867` in `9` steps
-- `safety_risk_damage_replacement`: `0.99` in `9` steps
-- `suspicious_refund_abuse`: `0.99` in `8` steps
+- `safety_risk_damage_replacement`: `0.98` in `10` steps
+- `suspicious_refund_abuse`: `0.98` in `9` steps
