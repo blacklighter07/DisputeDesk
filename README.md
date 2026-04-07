@@ -168,6 +168,15 @@ cd dispute_desk_env
 python inference.py
 ```
 
+The root inference runner prints validator-compatible structured blocks to stdout:
+
+```text
+[START] task=late_delivery_refund case=CASE-001 difficulty=easy max_steps=8
+[STEP] task=late_delivery_refund case=CASE-001 step=1 action=review_artifact reward=0.05 done=false artifact=order_summary
+[END] task=late_delivery_refund case=CASE-001 score=1 steps=5 passed=true
+```
+
+Use `python inference.py --json` if you also want the final `BaselineResponse` JSON on stdout after the structured blocks.
 The run writes the latest score artifact to `outputs/evals/baseline_latest.json`.
 
 Pinned default baseline model:
