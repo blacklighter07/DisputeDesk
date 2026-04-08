@@ -30,6 +30,7 @@ from dispute_desk.server.dispute_desk_environment import DisputeDeskEnvironment
 
 BENCHMARK_NAME = "dispute_desk"
 NULL_ERROR = "null"
+OPEN_INTERVAL_EPSILON = 0.001
 
 
 @dataclass(frozen=True)
@@ -339,7 +340,12 @@ def _format_error(error: str | None) -> str:
 
 
 def _clamp_score(score: float) -> float:
-    return min(max(float(score), 0.0), 1.0)
+    bounded_score = min(max(float(score), 0.0), 1.0)
+    if bounded_score <= 0.0:
+        return OPEN_INTERVAL_EPSILON
+    if bounded_score >= 1.0:
+        return 1.0 - OPEN_INTERVAL_EPSILON
+    return round(bounded_score, 4)
 
 
 def _close_environment(environment: DisputeDeskEnvironment) -> None:

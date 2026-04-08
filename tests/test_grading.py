@@ -24,4 +24,5 @@ def test_hard_task_perfect_grade_is_high():
     )
     report = grade_episode(scenario, state)
     assert report.score >= 0.95
+    assert 0.0 < report.score < 1.0
     assert report.passed is True

@@ -19,6 +19,8 @@ WEIGHTS = {
     "efficiency": 0.02,
 }
 
+OPEN_INTERVAL_EPSILON = 0.001
+
 
 def estimate_progress_score(scenario: DisputeScenario, state: EnvironmentStateModel) -> float:
     evidence_score = _evidence_score(
@@ -110,10 +112,11 @@ def grade_episode(scenario: DisputeScenario, state: EnvironmentStateModel) -> Gr
             4,
         ),
     }
-    total_score = round(
+    raw_total_score = round(
         sum(components[name] * weight for name, weight in WEIGHTS.items()),
         4,
     )
+    total_score = _open_interval_score(raw_total_score)
     notes: list[str] = []
     if components["evidence"] < 1.0:
         notes.append("Required evidence was not fully reviewed.")
@@ -140,6 +143,15 @@ def grade_episode(scenario: DisputeScenario, state: EnvironmentStateModel) -> Gr
         components=components,
         notes=notes,
     )
+
+
+def _open_interval_score(score: float) -> float:
+    bounded_score = min(max(float(score), 0.0), 1.0)
+    if bounded_score <= 0.0:
+        return OPEN_INTERVAL_EPSILON
+    if bounded_score >= 1.0:
+        return 1.0 - OPEN_INTERVAL_EPSILON
+    return round(bounded_score, 4)
 
 
 def _evidence_score(reviewed_ids: list[str], required_ids: list[str]) -> float:

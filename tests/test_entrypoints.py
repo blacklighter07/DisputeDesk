@@ -3,6 +3,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from statistics import mean
 
 from fastapi.testclient import TestClient
 
@@ -103,4 +104,8 @@ def test_root_inference_emits_structured_stdout_blocks(monkeypatch):
         r"\[END\] success=(true|false) steps=\d+ score=\d+\.\d{3} rewards=.*",
         end_lines[-1],
     )
+    end_scores = [float(re.search(r"score=(\d+\.\d{3})", line).group(1)) for line in end_lines]
+    assert all(0.0 < score < 1.0 for score in end_scores)
     assert result.average_score >= 0.98
+    assert 0.0 < result.average_score < 1.0
+    assert mean(end_scores) > 0.8
