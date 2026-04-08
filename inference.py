@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -26,11 +28,15 @@ from dispute_desk.scenarios import SCENARIOS
 from dispute_desk.server.dispute_desk_environment import DisputeDeskEnvironment
 
 
+BENCHMARK_NAME = "dispute_desk"
+NULL_ERROR = "null"
+
+
 @dataclass(frozen=True)
 class InferenceRuntimeConfig:
     api_base_url: str
     model_name: str
-    has_api_key: bool
+    api_key: str
 
 
 StructuredEmitter = Callable[[str], None]
@@ -41,34 +47,72 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Run the DisputeDesk inference baseline with the OpenAI client. "
-            "Reads OPENAI_API_KEY and OPENAI_MODEL by default, with support for "
-            "API_BASE_URL, HF_TOKEN, and MODEL_NAME as compatibility aliases."
+            "Uses API_BASE_URL, MODEL_NAME, and HF_TOKEN by default, while still "
+            "accepting OPENAI_API_KEY and OPENAI_MODEL compatibility aliases."
         )
     )
-    parser.add_argument("--model", default=None, help="Override the OpenAI model id.")
+    parser.add_argument("--model", default=None, help="Override the model id for inference.")
     parser.add_argument(
         "--json",
         action="store_true",
-        help="Also print the final baseline response as JSON after the structured stdout blocks.",
+        help="Also print the final baseline response JSON after the structured stdout logs.",
     )
     return parser
 
 
 def resolve_runtime_config(model_override: str | None) -> InferenceRuntimeConfig:
+    load_environment()
+    api_key = get_api_key()
+    if not api_key:
+        raise RuntimeError(
+            "Missing credentials. Set HF_TOKEN, or provide OPENAI_API_KEY as a compatibility alias."
+        )
     return InferenceRuntimeConfig(
         api_base_url=get_api_base_url(),
         model_name=model_override or get_model_name(DEFAULT_MODEL),
-        has_api_key=bool(get_api_key()),
+        api_key=api_key,
     )
 
 
-def format_structured_line(kind: str, **fields: Any) -> str:
-    tokens = [f"[{kind}]"]
-    for key, value in fields.items():
-        if value is None:
-            continue
-        tokens.append(f"{key}={_structured_value(value)}")
-    return " ".join(tokens)
+def log_start(emit: StructuredEmitter, task: str, env: str, model: str) -> None:
+    emit(f"[START] task={task} env={env} model={model}")
+
+
+def log_step(
+    emit: StructuredEmitter,
+    *,
+    step: int,
+    action: str,
+    reward: float,
+    done: bool,
+    error: str | None,
+) -> None:
+    emit(
+        "[STEP] "
+        f"step={step} "
+        f"action={action} "
+        f"reward={reward:.2f} "
+        f"done={str(done).lower()} "
+        f"error={_format_error(error)}"
+    )
+
+
+def log_end(
+    emit: StructuredEmitter,
+    *,
+    success: bool,
+    steps: int,
+    score: float,
+    rewards: list[float],
+) -> None:
+    rewards_str = ",".join(f"{reward:.2f}" for reward in rewards)
+    emit(
+        "[END] "
+        f"success={str(success).lower()} "
+        f"steps={steps} "
+        f"score={score:.3f} "
+        f"rewards={rewards_str}"
+    )
 
 
 def run_inference(
@@ -77,95 +121,26 @@ def run_inference(
     emit: StructuredEmitter | None = None,
     decision_resolver: DecisionResolver | None = None,
 ) -> BaselineResponse:
-    load_environment()
     runtime = resolve_runtime_config(model)
-    api_key = get_api_key()
-    if not runtime.has_api_key or not api_key:
-        raise RuntimeError(
-            "Missing credentials. Set OPENAI_API_KEY, or provide HF_TOKEN as a compatibility alias."
-        )
-
     structured_emit = emit or _stdout_emit
     resolve_decision = decision_resolver or _choose_decision
     client = OpenAI(
         base_url=runtime.api_base_url,
-        api_key=api_key,
+        api_key=runtime.api_key,
         timeout=30.0,
         max_retries=1,
     )
 
     results: list[BaselineTaskResult] = []
     for scenario in SCENARIOS:
-        environment = DisputeDeskEnvironment(default_task_id=scenario.task_id)
-        observation = environment.reset(task_id=scenario.task_id)
-        _emit(
-            structured_emit,
-            "START",
-            task=scenario.task_id,
-            case=observation.case_id,
-            difficulty=observation.difficulty,
-            max_steps=scenario.max_steps,
-        )
-        observation = _collect_case_signal_with_trace(
-            environment=environment,
-            observation=observation,
-            task_id=scenario.task_id,
-            case_id=observation.case_id,
-            emit=structured_emit,
-        )
-        decision = resolve_decision(
+        result = _run_task_episode(
             client=client,
-            model=runtime.model_name,
-            observation_payload=observation.model_dump(mode="json"),
-        )
-
-        if not observation.done:
-            observation = _step_with_trace(
-                environment=environment,
-                task_id=scenario.task_id,
-                case_id=observation.case_id,
-                action=CaseAction(
-                    action_type="classify_case",
-                    classification=decision.classification,
-                    severity=decision.severity,
-                ),
-                emit=structured_emit,
-            )
-
-        if not observation.done:
-            observation = _step_with_trace(
-                environment=environment,
-                task_id=scenario.task_id,
-                case_id=observation.case_id,
-                action=CaseAction(
-                    action_type="resolve_case",
-                    resolution=decision.resolution,
-                    refund_amount=decision.refund_amount,
-                    require_return=decision.require_return,
-                    escalation_target=decision.escalation_target,
-                    reason_code=decision.reason_code,
-                    message_template=decision.message_template,
-                ),
-                emit=structured_emit,
-            )
-
-        report = environment.grader_report()
-        result = BaselineTaskResult(
+            model_name=runtime.model_name,
             task_id=scenario.task_id,
-            score=report.score,
-            steps=environment.state.step_count,
-            passed=report.passed,
+            emit=structured_emit,
+            decision_resolver=resolve_decision,
         )
         results.append(result)
-        _emit(
-            structured_emit,
-            "END",
-            task=scenario.task_id,
-            case=observation.case_id,
-            score=report.score,
-            steps=environment.state.step_count,
-            passed=report.passed,
-        )
 
     average_score = round(sum(item.score for item in results) / len(results), 4)
     response = BaselineResponse(model=runtime.model_name, average_score=average_score, tasks=results)
@@ -180,12 +155,94 @@ def main() -> None:
         print(json.dumps(result.model_dump(mode="json"), indent=2), flush=True)
 
 
+def _run_task_episode(
+    *,
+    client: OpenAI,
+    model_name: str,
+    task_id: str,
+    emit: StructuredEmitter,
+    decision_resolver: DecisionResolver,
+) -> BaselineTaskResult:
+    environment = DisputeDeskEnvironment(default_task_id=task_id)
+    rewards: list[float] = []
+    steps_taken = 0
+    score = 0.0
+    success = False
+    observation = None
+
+    log_start(emit=emit, task=task_id, env=BENCHMARK_NAME, model=model_name)
+    try:
+        observation = environment.reset(task_id=task_id)
+        observation = _collect_case_signal_with_trace(
+            environment=environment,
+            observation=observation,
+            rewards=rewards,
+            emit=emit,
+        )
+        with contextlib.redirect_stderr(io.StringIO()):
+            decision = decision_resolver(
+                client=client,
+                model=model_name,
+                observation_payload=observation.model_dump(mode="json"),
+            )
+
+        if not observation.done:
+            observation = _step_with_trace(
+                environment=environment,
+                action=CaseAction(
+                    action_type="classify_case",
+                    classification=decision.classification,
+                    severity=decision.severity,
+                ),
+                rewards=rewards,
+                emit=emit,
+            )
+
+        if not observation.done:
+            observation = _step_with_trace(
+                environment=environment,
+                action=CaseAction(
+                    action_type="resolve_case",
+                    resolution=decision.resolution,
+                    refund_amount=decision.refund_amount,
+                    require_return=decision.require_return,
+                    escalation_target=decision.escalation_target,
+                    reason_code=decision.reason_code,
+                    message_template=decision.message_template,
+                ),
+                rewards=rewards,
+                emit=emit,
+            )
+
+        report = environment.grader_report()
+        score = float(report.score)
+        success = bool(report.passed)
+        steps_taken = environment.state.step_count
+    except Exception:
+        steps_taken = environment.state.step_count
+    finally:
+        _close_environment(environment)
+        log_end(
+            emit=emit,
+            success=success,
+            steps=steps_taken,
+            score=_clamp_score(score),
+            rewards=rewards,
+        )
+
+    return BaselineTaskResult(
+        task_id=task_id,
+        score=_clamp_score(score),
+        steps=steps_taken,
+        passed=success,
+    )
+
+
 def _collect_case_signal_with_trace(
     environment: DisputeDeskEnvironment,
     observation: Any,
     *,
-    task_id: str,
-    case_id: str,
+    rewards: list[float],
     emit: StructuredEmitter,
 ):
     candidate_artifacts = sorted(
@@ -207,9 +264,8 @@ def _collect_case_signal_with_trace(
             continue
         observation = _step_with_trace(
             environment=environment,
-            task_id=task_id,
-            case_id=case_id,
             action=CaseAction(action_type="review_artifact", artifact_id=artifact.artifact_id),
+            rewards=rewards,
             emit=emit,
         )
 
@@ -227,9 +283,8 @@ def _collect_case_signal_with_trace(
             continue
         observation = _step_with_trace(
             environment=environment,
-            task_id=task_id,
-            case_id=case_id,
             action=CaseAction(action_type="request_more_context", context_key=context_key),
+            rewards=rewards,
             emit=emit,
         )
     return observation
@@ -238,50 +293,63 @@ def _collect_case_signal_with_trace(
 def _step_with_trace(
     environment: DisputeDeskEnvironment,
     *,
-    task_id: str,
-    case_id: str,
     action: CaseAction,
+    rewards: list[float],
     emit: StructuredEmitter,
 ):
     observation = environment.step(action)
-    _emit(
-        emit,
-        "STEP",
-        task=task_id,
-        case=case_id,
+    reward = float(getattr(observation, "reward", 0.0) or 0.0)
+    rewards.append(reward)
+    log_step(
+        emit=emit,
         step=environment.state.step_count,
-        action=action.action_type,
-        reward=getattr(observation, "reward", None),
-        done=observation.done,
-        artifact=action.artifact_id,
-        context=action.context_key,
-        classification=action.classification,
-        severity=action.severity,
-        resolution=action.resolution,
-        refund_amount=action.refund_amount,
-        require_return=action.require_return,
-        escalation_target=action.escalation_target,
-        reason_code=action.reason_code,
-        message_template=action.message_template,
+        action=_action_to_string(action),
+        reward=reward,
+        done=bool(observation.done),
+        error=NULL_ERROR,
     )
     return observation
 
 
-def _emit(emit: StructuredEmitter, kind: str, **fields: Any) -> None:
-    emit(format_structured_line(kind, **fields))
+def _action_to_string(action: CaseAction) -> str:
+    if action.action_type == "review_artifact":
+        return f"review_artifact({action.artifact_id})"
+    if action.action_type == "request_more_context":
+        return f"request_more_context({action.context_key})"
+    if action.action_type == "classify_case":
+        return f"classify_case({action.classification},{action.severity})"
+    if action.action_type == "resolve_case":
+        refund_amount = 0.0 if action.refund_amount is None else float(action.refund_amount)
+        require_return = str(bool(action.require_return)).lower()
+        escalation_target = action.escalation_target or "none"
+        reason_code = action.reason_code or "null"
+        message_template = action.message_template or "null"
+        return (
+            "resolve_case("
+            f"{action.resolution},{refund_amount:.2f},{require_return},{escalation_target},"
+            f"{reason_code},{message_template})"
+        )
+    return action.action_type
+
+
+def _format_error(error: str | None) -> str:
+    if not error:
+        return NULL_ERROR
+    return error.replace("\n", "\\n")
+
+
+def _clamp_score(score: float) -> float:
+    return min(max(float(score), 0.0), 1.0)
+
+
+def _close_environment(environment: DisputeDeskEnvironment) -> None:
+    close_method = getattr(environment, "close", None)
+    if callable(close_method):
+        close_method()
 
 
 def _stdout_emit(line: str) -> None:
     print(line, flush=True)
-
-
-def _structured_value(value: Any) -> str:
-    if isinstance(value, bool):
-        return str(value).lower()
-    if isinstance(value, float):
-        formatted = f"{value:.4f}".rstrip("0").rstrip(".")
-        return formatted or "0"
-    return str(value).replace(" ", "_")
 
 
 if __name__ == "__main__":

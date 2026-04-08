@@ -102,13 +102,13 @@ Format:
 
 ```bash
 API_BASE_URL=https://api.openai.com/v1
-OPENAI_API_KEY=your_key_here
-OPENAI_MODEL=gpt-5-mini-2025-08-07
+MODEL_NAME=gpt-5-mini-2025-08-07
+HF_TOKEN=your_key_here
 ```
 
 The `.env` file is gitignored.
 The Docker image does not copy `.env`; pass it at runtime with `--env-file .env`.
-The runtime also accepts `HF_TOKEN` and `MODEL_NAME` as compatibility aliases if an external validator provides those names.
+The runtime also accepts `OPENAI_API_KEY` and `OPENAI_MODEL` as local compatibility aliases.
 
 ## Local run
 
@@ -148,13 +148,13 @@ The typed client supports the standard OpenEnv `reset()`, `step()`, and `state()
 The baseline runner uses the OpenAI Python client and supports the competition variables:
 
 - `API_BASE_URL`
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL`
-
-It also accepts compatibility aliases:
-
 - `HF_TOKEN`
 - `MODEL_NAME`
+
+It also accepts local compatibility aliases:
+
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
 
 ```bash
 cd dispute_desk_env
@@ -168,12 +168,12 @@ cd dispute_desk_env
 python inference.py
 ```
 
-The root inference runner prints validator-compatible structured blocks to stdout:
+The root inference runner prints the exact validator-facing stdout structure:
 
 ```text
-[START] task=late_delivery_refund case=CASE-001 difficulty=easy max_steps=8
-[STEP] task=late_delivery_refund case=CASE-001 step=1 action=review_artifact reward=0.05 done=false artifact=order_summary
-[END] task=late_delivery_refund case=CASE-001 score=1 steps=5 passed=true
+[START] task=late_delivery_refund env=dispute_desk model=gpt-5-mini-2025-08-07
+[STEP] step=1 action=review_artifact(order_summary) reward=0.05 done=false error=null
+[END] success=true steps=7 score=0.987 rewards=0.05,0.05,0.01,0.01,0.05,0.07,0.72
 ```
 
 Use `python inference.py --json` if you also want the final `BaselineResponse` JSON on stdout after the structured blocks.
@@ -205,11 +205,11 @@ This repository is configured for a Hugging Face Docker Space:
 
 In your Space settings, add:
 
-- Secret: `OPENAI_API_KEY`
+- Secret: `HF_TOKEN`
 - Variable: `API_BASE_URL` with `https://api.openai.com/v1`
-- Variable or secret: `OPENAI_MODEL` if you want to override the pinned baseline model
+- Variable or secret: `MODEL_NAME` if you want to override the pinned baseline model
 
-If an external validator injects `HF_TOKEN` or `MODEL_NAME`, the runtime accepts those as aliases.
+If you already use local OpenAI-prefixed variables, the runtime still accepts them as aliases.
 
 Once the Space repo exists, you can push this repo to Hugging Face with:
 
@@ -229,7 +229,7 @@ pytest
 openenv validate . --json
 ```
 
-Once `OPENAI_API_KEY` is present in `.env`, run:
+Once `HF_TOKEN` is present in `.env`, run:
 
 ```bash
 cd dispute_desk_env

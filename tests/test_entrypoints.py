@@ -1,4 +1,5 @@
 import importlib.util
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -86,7 +87,20 @@ def test_root_inference_emits_structured_stdout_blocks(monkeypatch):
         decision_resolver=lambda client, model, observation_payload: _fallback_decision(observation_payload),
     )
 
-    assert any(line.startswith("[START] task=late_delivery_refund") for line in emitted_lines)
-    assert any(line.startswith("[STEP] task=late_delivery_refund") for line in emitted_lines)
-    assert any(line.startswith("[END] task=suspicious_refund_abuse") for line in emitted_lines)
+    start_lines = [line for line in emitted_lines if line.startswith("[START]")]
+    step_lines = [line for line in emitted_lines if line.startswith("[STEP]")]
+    end_lines = [line for line in emitted_lines if line.startswith("[END]")]
+
+    assert start_lines
+    assert step_lines
+    assert end_lines
+    assert re.fullmatch(r"\[START\] task=[^ ]+ env=[^ ]+ model=[^ ]+", start_lines[0])
+    assert re.fullmatch(
+        r"\[STEP\] step=\d+ action=[^ ]+ reward=-?\d+\.\d{2} done=(true|false) error=.*",
+        step_lines[0],
+    )
+    assert re.fullmatch(
+        r"\[END\] success=(true|false) steps=\d+ score=\d+\.\d{3} rewards=.*",
+        end_lines[-1],
+    )
     assert result.average_score >= 0.98

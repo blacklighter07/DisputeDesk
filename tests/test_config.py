@@ -1,7 +1,7 @@
 from dispute_desk.config import get_api_base_url, get_api_key, get_model_name
 
 
-def test_openai_environment_variables_take_priority(monkeypatch):
+def test_dashboard_environment_variables_take_priority(monkeypatch):
     monkeypatch.setenv("API_BASE_URL", "https://api.openai.com/v1")
     monkeypatch.setenv("HF_TOKEN", "hf_test_token")
     monkeypatch.setenv("MODEL_NAME", "hf/model")
@@ -9,8 +9,8 @@ def test_openai_environment_variables_take_priority(monkeypatch):
     monkeypatch.setenv("OPENAI_MODEL", "openai-model")
 
     assert get_api_base_url() == "https://api.openai.com/v1"
-    assert get_api_key() == "openai_test_token"
-    assert get_model_name("default-model") == "openai-model"
+    assert get_api_key() == "hf_test_token"
+    assert get_model_name("default-model") == "hf/model"
 
 
 def test_compatibility_aliases_remain_supported(monkeypatch):

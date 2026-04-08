@@ -28,12 +28,12 @@ def get_api_base_url(default: str = "https://api.openai.com/v1") -> str:
 
 def get_api_key() -> str | None:
     load_environment()
-    return os.getenv("OPENAI_API_KEY") or os.getenv("HF_TOKEN") or os.getenv("API_KEY")
+    return os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY")
 
 
 def get_model_name(default_model: str) -> str:
     load_environment()
-    return os.getenv("OPENAI_MODEL") or os.getenv("MODEL_NAME", default_model)
+    return os.getenv("MODEL_NAME") or os.getenv("OPENAI_MODEL") or default_model
 
 
 def get_openai_model(default_model: str) -> str:
