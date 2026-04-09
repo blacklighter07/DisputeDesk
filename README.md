@@ -176,6 +176,11 @@ The root inference runner prints the exact validator-facing stdout structure:
 [END] success=true steps=7 score=0.987 rewards=0.05,0.05,0.01,0.01,0.05,0.07,0.72
 ```
 
+Competition note:
+
+- Task-level scores are normalized to remain strictly inside `(0, 1)` for validator compatibility.
+- The grader components remain unchanged; only the final task score boundary is normalized so perfect tasks report `0.999` instead of `1.000`.
+
 Use `python inference.py --json` if you also want the final `BaselineResponse` JSON on stdout after the structured blocks.
 The run writes the latest score artifact to `outputs/evals/baseline_latest.json`.
 
@@ -210,6 +215,7 @@ In your Space settings, add:
 - Variable or secret: `MODEL_NAME` if you want to override the pinned baseline model
 
 If you already use local OpenAI-prefixed variables, the runtime still accepts them as aliases.
+If you change Space variables after a successful build, restart the Space so the new runtime configuration is loaded.
 
 Once the Space repo exists, you can push this repo to Hugging Face with:
 
@@ -224,25 +230,26 @@ Run the full local submission check with:
 
 ```bash
 cd dispute_desk_env
-python3.11 -m compileall dispute_desk tests server
-pytest
-openenv validate . --json
+python3.11 -m compileall dispute_desk tests server inference.py
+.venv/bin/python -m pytest
+.venv/bin/openenv validate . --json
 ```
 
 Once `HF_TOKEN` is present in `.env`, run:
 
 ```bash
 cd dispute_desk_env
-dispute-desk-baseline
+.venv/bin/python inference.py
+.venv/bin/dispute-desk-baseline
 ```
 
 ## Baseline scores
 
-Validated local run on `2026-03-26` with `gpt-5-mini-2025-08-07`:
+Validated local run on `2026-04-09` with `gpt-5-mini-2025-08-07`:
 
-- Average score: `0.9847`
+- Average score: `0.9885`
 - `late_delivery_refund`: `0.9867` in `7` steps
 - `partial_damage_partial_refund`: `0.99` in `7` steps
 - `wrong_item_premium_exchange`: `0.9867` in `9` steps
 - `safety_risk_damage_replacement`: `0.98` in `10` steps
-- `suspicious_refund_abuse`: `0.98` in `9` steps
+- `suspicious_refund_abuse`: `0.999` in `9` steps
