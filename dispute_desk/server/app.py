@@ -1,62 +1,43 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
-from openenv.core.env_server.http_server import HTTPEnvServer
-from openenv.core.env_server.types import ServerMode
+import os
+
+from fastapi import HTTPException
+from fastapi.responses import RedirectResponse
+from openenv.core.env_server import create_app
 
 from dispute_desk.baseline import run_baseline
 from dispute_desk.config import load_environment
 from dispute_desk.models import (
     BaselineResponse,
-    CaseAction,
-    CaseObservation,
     EnvironmentStateModel,
     GraderResponse,
-    ResetRequest,
-    ResetResponse,
-    StepRequest,
-    StepResponse,
     TaskCatalogResponse,
+    CaseAction,
+    CaseObservation,
 )
 from dispute_desk.server.dispute_desk_environment import DisputeDeskEnvironment
 
 load_environment()
 
-app = FastAPI(
-    title="DisputeDesk Environment API",
-    version="0.1.0",
-    description="OpenEnv-style HTTP API for marketplace dispute resolution.",
-)
-environment = DisputeDeskEnvironment()
-openenv_server = HTTPEnvServer(
+app = create_app(
     DisputeDeskEnvironment,
     CaseAction,
     CaseObservation,
+    env_name="dispute_desk_env",
     max_concurrent_envs=4,
 )
-openenv_server.register_routes(app, mode=ServerMode.PRODUCTION)
+app.title = "DisputeDesk Environment API"
+app.version = "0.1.0"
+app.description = "OpenEnv-style HTTP API for marketplace dispute resolution."
+
+environment = DisputeDeskEnvironment()
 
 
-@app.post("/reset", response_model=ResetResponse, tags=["Environment"])
-def reset(request: ResetRequest | None = None) -> ResetResponse:
-    request = request or ResetRequest()
-    observation = environment.reset(
-        seed=request.seed,
-        episode_id=request.episode_id,
-        task_id=request.task_id,
-    )
-    return ResetResponse(observation=observation, reward=observation.reward, done=observation.done)
-
-
-@app.post("/step", response_model=StepResponse, tags=["Environment"])
-def step(request: StepRequest) -> StepResponse:
-    observation = environment.step(request.action)
-    return StepResponse(observation=observation, reward=observation.reward, done=observation.done)
-
-
-@app.get("/state", response_model=EnvironmentStateModel, tags=["State"])
-def state() -> EnvironmentStateModel:
-    return environment.state
+@app.get("/", include_in_schema=False)
+def root() -> RedirectResponse:
+    destination = "/web" if _web_interface_enabled() else "/docs"
+    return RedirectResponse(url=destination, status_code=307)
 
 
 @app.get("/tasks", response_model=TaskCatalogResponse, tags=["Tasks"])
@@ -84,3 +65,7 @@ def main() -> None:
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
+
+
+def _web_interface_enabled() -> bool:
+    return os.getenv("ENABLE_WEB_INTERFACE", "false").lower() in {"true", "1", "yes"}

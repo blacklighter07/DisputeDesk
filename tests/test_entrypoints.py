@@ -53,6 +53,14 @@ def test_reset_accepts_missing_body():
     assert payload["observation"]["task_id"]
 
 
+def test_root_redirects_to_docs_without_web_interface():
+    client = TestClient(app)
+    response = client.get("/", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "/docs"
+
+
 def test_root_inference_wrapper_imports_cleanly():
     result = subprocess.run(
         [

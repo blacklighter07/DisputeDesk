@@ -1,9 +1,11 @@
 ---
 title: DisputeDesk
+emoji: "🧾"
 colorFrom: blue
 colorTo: gray
 sdk: docker
 app_port: 8000
+base_path: /web
 pinned: false
 short_description: OpenEnv dispute-resolution environment.
 tags:
@@ -91,6 +93,7 @@ The agent can:
 - `GET /tasks`
 - `GET /grader`
 - `GET /baseline`
+- `GET /web` when `ENABLE_WEB_INTERFACE=true`
 
 ## Environment variables
 
@@ -125,6 +128,13 @@ Or:
 ```bash
 cd dispute_desk_env
 uvicorn server.app:app --host 0.0.0.0 --port 8000
+```
+
+To preview the built-in OpenEnv web interface locally:
+
+```bash
+cd dispute_desk_env
+ENABLE_WEB_INTERFACE=true ENV_README_PATH=$PWD/README.md uvicorn server.app:app --host 0.0.0.0 --port 8000
 ```
 
 ## Python client
@@ -199,6 +209,7 @@ docker run --rm --env-file .env -p 8000:8000 dispute-desk-env
 ```
 
 The repository root now contains the Dockerfile expected by Hugging Face Docker Spaces.
+The Docker image enables the OpenEnv web interface by default, and the Space opens at `/web`.
 
 ## Hugging Face Space Deployment
 

@@ -2,6 +2,7 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV ENABLE_WEB_INTERFACE=true
 
 RUN useradd -m -u 1000 user
 
@@ -9,6 +10,7 @@ USER user
 
 ENV HOME=/home/user
 ENV PATH=/home/user/.local/bin:$PATH
+ENV ENV_README_PATH=/home/user/app/README.md
 
 WORKDIR $HOME/app
 
