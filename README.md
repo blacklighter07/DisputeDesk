@@ -5,7 +5,7 @@ colorFrom: blue
 colorTo: gray
 sdk: docker
 app_port: 8000
-base_path: /web
+base_path: /demo
 pinned: false
 short_description: OpenEnv dispute-resolution environment.
 tags:
@@ -93,25 +93,25 @@ The agent can:
 - `GET /tasks`
 - `GET /grader`
 - `GET /baseline`
-- `GET /web` when `ENABLE_WEB_INTERFACE=true`
+- `GET /demo` for the Space-visible manual-play UI
 
-## Environment variables
+## Required configuration
 
-For competition-compatible inference, set:
+This submission expects these environment variables at runtime:
 
-- `dispute_desk_env/.env`
+- `API_BASE_URL=https://api.openai.com/v1`
+- `MODEL_NAME=gpt-5-mini-2025-08-07`
+- `HF_TOKEN=<your OpenAI-compatible API key>`
 
-Format:
+For the hackathon submission, set them in your Hugging Face Space settings:
 
-```bash
-API_BASE_URL=https://api.openai.com/v1
-MODEL_NAME=gpt-5-mini-2025-08-07
-HF_TOKEN=your_key_here
-```
+- Secret: `HF_TOKEN`
+- Variable: `API_BASE_URL`
+- Variable: `MODEL_NAME`
 
-The `.env` file is gitignored.
-The Docker image does not copy `.env`; pass it at runtime with `--env-file .env`.
-The runtime also accepts `OPENAI_API_KEY` and `OPENAI_MODEL` as local compatibility aliases.
+For local testing only, copy [`.env.example`](/Users/kapilverma/Documents/Hackathon/dispute_desk_env/.env.example) to `.env`.
+The `.env` file is gitignored and is never copied into the Docker image.
+The runtime also accepts `OPENAI_API_KEY` and `OPENAI_MODEL` as compatibility aliases, but the competition-facing names above are the primary configuration.
 
 ## Local run
 
@@ -130,11 +130,11 @@ cd dispute_desk_env
 uvicorn server.app:app --host 0.0.0.0 --port 8000
 ```
 
-To preview the built-in OpenEnv web interface locally:
+To preview the Hugging Face-facing demo locally:
 
 ```bash
 cd dispute_desk_env
-ENABLE_WEB_INTERFACE=true ENV_README_PATH=$PWD/README.md uvicorn server.app:app --host 0.0.0.0 --port 8000
+uvicorn server.app:app --host 0.0.0.0 --port 8000
 ```
 
 ## Python client
@@ -209,7 +209,7 @@ docker run --rm --env-file .env -p 8000:8000 dispute-desk-env
 ```
 
 The repository root now contains the Dockerfile expected by Hugging Face Docker Spaces.
-The Docker image enables the OpenEnv web interface by default, and the Space opens at `/web`.
+The Space opens directly into the custom `/demo` interface while preserving the OpenEnv API and WebSocket routes for validation.
 
 ## Hugging Face Space Deployment
 
@@ -237,22 +237,40 @@ git push hf main
 
 ## Validation flow
 
-Run the full local submission check with:
+Run the final local submission check with:
 
 ```bash
 cd dispute_desk_env
-python3.11 -m compileall dispute_desk tests server inference.py
-.venv/bin/python -m pytest
-.venv/bin/openenv validate . --json
+./scripts/final_preflight.sh
 ```
 
-Once `HF_TOKEN` is present in `.env`, run:
+The script covers:
+
+- bytecode compilation
+- `pytest`
+- `openenv validate . --json`
+- `inference.py` structured stdout
+
+If you want to run the pieces manually:
 
 ```bash
 cd dispute_desk_env
+.venv/bin/python -m compileall dispute_desk tests server inference.py
+.venv/bin/python -m pytest
+.venv/bin/openenv validate . --json
 .venv/bin/python inference.py
 .venv/bin/dispute-desk-baseline
 ```
+
+## Submission checklist
+
+Before the final resubmission:
+
+- push the latest commit to both `origin` and `hf`
+- wait for the Hugging Face Space to rebuild and enter `Running`
+- confirm the Space opens at `/demo`
+- confirm `POST /reset` still returns `200`
+- confirm the Space secrets and variables include `HF_TOKEN`, `API_BASE_URL`, and `MODEL_NAME`
 
 ## Baseline scores
 

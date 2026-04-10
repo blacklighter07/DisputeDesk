@@ -53,12 +53,35 @@ def test_reset_accepts_missing_body():
     assert payload["observation"]["task_id"]
 
 
-def test_root_redirects_to_docs_without_web_interface():
+def test_stateful_http_step_works_after_reset():
+    client = TestClient(app)
+    reset_response = client.post("/reset", json={"task_id": "late_delivery_refund"})
+    assert reset_response.status_code == 200
+
+    step_response = client.post(
+        "/step",
+        json={"action": {"action_type": "review_artifact", "artifact_id": "order_summary"}},
+    )
+    assert step_response.status_code == 200
+    step_payload = step_response.json()
+    assert step_payload["done"] is False
+    assert step_payload["observation"]["revealed_artifacts"][0]["artifact_id"] == "order_summary"
+
+
+def test_root_redirects_to_demo():
     client = TestClient(app)
     response = client.get("/", follow_redirects=False)
 
     assert response.status_code == 307
-    assert response.headers["location"] == "/docs"
+    assert response.headers["location"] == "/demo"
+
+
+def test_demo_page_renders():
+    client = TestClient(app)
+    response = client.get("/demo")
+
+    assert response.status_code == 200
+    assert "DisputeDesk Playground" in response.text
 
 
 def test_root_inference_wrapper_imports_cleanly():

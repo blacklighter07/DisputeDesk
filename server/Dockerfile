@@ -2,8 +2,6 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV ENABLE_WEB_INTERFACE=true
-ENV ENV_README_PATH=/app/dispute_desk_env/README.md
 WORKDIR /app/dispute_desk_env
 
 COPY server/requirements.txt /tmp/requirements.txt
